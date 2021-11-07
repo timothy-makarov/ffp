@@ -33,6 +33,7 @@ fn main() {
         opt.directory.display()
     );
 
+    // Alternative faster and not very precise algorithm is yet to be implemented.
     assert!(!opt.histogram, "Not implemented!");
 
     let buff_size: usize = match opt.digest_size.try_into() {
@@ -42,6 +43,9 @@ fn main() {
             4096
         }
     };
+
+    let mut counter = 0;
+    let mut total = vec![0u8; 0];
 
     for entry in WalkDir::new(opt.directory) {
         match entry {
@@ -81,11 +85,14 @@ fn main() {
 
                                                 let mut sha256 = Sha256::new();
                                                 sha256.update(buff);
-                                                let res = sha256.finalize();
+                                                let file_digest = sha256.finalize();
 
                                                 if opt.verbose {
-                                                    println!("\tSHA256: {:02x}", res);
+                                                    println!("\tSHA256: {:02x}", file_digest);
                                                 }
+
+                                                total.extend(file_digest);
+                                                counter += 1;
                                             }
                                             Err(err) => {
                                                 println!("{}", err);
@@ -114,11 +121,13 @@ fn main() {
 
                                                 let mut sha256 = Sha256::new();
                                                 sha256.update(buff_head);
-                                                let res = sha256.finalize();
+                                                let file_digest = sha256.finalize();
 
                                                 if opt.verbose {
-                                                    println!("\tSHA256: {:02x}", res);
+                                                    println!("\tSHA256: {:02x}", file_digest);
                                                 }
+
+                                                total.extend(file_digest);
                                             }
                                             Err(err) => {
                                                 println!("{}", err);
@@ -154,11 +163,17 @@ fn main() {
 
                                                         let mut sha256 = Sha256::new();
                                                         sha256.update(buff_tail);
-                                                        let res = sha256.finalize();
+                                                        let file_digest = sha256.finalize();
 
                                                         if opt.verbose {
-                                                            println!("\tSHA256: {:02x}", res);
+                                                            println!(
+                                                                "\tSHA256: {:02x}",
+                                                                file_digest
+                                                            );
                                                         }
+
+                                                        total.extend(file_digest);
+                                                        counter += 1;
                                                     }
                                                     Err(err) => {
                                                         println!("{}", err);
@@ -194,4 +209,10 @@ fn main() {
             }
         }
     }
+
+    let mut sha256 = Sha256::new();
+    sha256.update(total);
+    let digest = sha256.finalize();
+    println!("SHA256: {:02x}", digest);
+    println!("Total files: {}", counter);
 }
