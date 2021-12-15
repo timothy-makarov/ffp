@@ -1,4 +1,5 @@
 use core::panic;
+use std::path::Path;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::prelude::*;
@@ -14,14 +15,51 @@ struct Opt {
     #[structopt(name = "DIRECTORY", parse(from_os_str))]
     directory: PathBuf,
 
-    #[structopt(short = "s", long = "size", default_value = "4096")]
-    digest_size: u64,
-
-    #[structopt(short = "H", long = "histogram")]
-    histogram: bool,
+    #[structopt(short = "s", long = "buff-size", default_value = "4096")]
+    buff_size: u64,
 
     #[structopt(short = "v", long = "verbose")]
     verbose: bool,
+}
+
+fn get_single_fingerprint(file_name: &Path, file_size: usize, opt: Opt) -> Option<Vec<u8>> {
+    let mut buff = vec![0u8; file_size];
+    match File::open(file_name) {
+        Ok(mut file) => {
+            match file.read(buff.as_mut_slice()) {
+                Ok(n) => {
+                    if opt.verbose {
+                        println!("\tRead {} bytes.", n);
+                    }
+
+                    let mut sha256 = Sha256::new();
+                    sha256.update(buff);
+                    let file_digest = sha256.finalize();
+
+                    if opt.verbose {
+                        println!("\tSHA256: {:02x}", file_digest);
+                    }
+
+                    return Some(file_digest.to_vec());
+                }
+                Err(err) => {
+                    println!("{}", err);
+                    return None;
+                }
+            };
+        }
+        Err(err) => {
+            println!("{}", err);
+            return None;
+        }
+    };
+}
+
+fn get_double_fingerprint(file_name: &Path, file_size: usize, opt: Opt) -> Option<Vec<u8>> {
+    let mut total = vec![0u8; 0];
+    //
+    // TODO: Continue the same way as above...
+    //
 }
 
 fn main() {
@@ -33,10 +71,7 @@ fn main() {
         opt.directory.display()
     );
 
-    // Alternative faster and not very precise algorithm is yet to be implemented.
-    assert!(!opt.histogram, "Not implemented!");
-
-    let buff_size: usize = match opt.digest_size.try_into() {
+    let buff_size: usize = match opt.buff_size.try_into() {
         Ok(val) => val,
         Err(err) => {
             println!("{}", err);
@@ -62,7 +97,7 @@ fn main() {
                                 println!("\tSize: {}", meta.len());
                             }
 
-                            if meta.len() < 2 * opt.digest_size {
+                            if meta.len() < 2 * opt.buff_size {
                                 if opt.verbose {
                                     println!("\tSmall file.");
                                 }
@@ -148,7 +183,7 @@ fn main() {
                                 match File::open(entry.path()) {
                                     Ok(mut file) => {
                                         match file.seek(SeekFrom::Start(
-                                            meta.len() - (opt.digest_size as u64),
+                                            meta.len() - (opt.buff_size as u64),
                                         )) {
                                             Ok(p) => {
                                                 if opt.verbose {
