@@ -1,10 +1,7 @@
-use core::panic;
-use std::path::Path;
 use sha2::{Digest, Sha256};
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::Read;
-use std::io::SeekFrom;
+use std::path::Path;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use walkdir::WalkDir;
@@ -15,239 +12,76 @@ struct Opt {
     #[structopt(name = "DIRECTORY", parse(from_os_str))]
     directory: PathBuf,
 
-    #[structopt(short = "s", long = "buff-size", default_value = "4096")]
+    #[structopt(short = "s", long = "buff-size", default_value = "8192")]
     buff_size: u64,
 
     #[structopt(short = "v", long = "verbose")]
     verbose: bool,
 }
 
-fn get_single_fingerprint(file_name: &Path, file_size: usize, opt: Opt) -> Option<Vec<u8>> {
-    let mut buff = vec![0u8; file_size];
-    match File::open(file_name) {
-        Ok(mut file) => {
-            match file.read(buff.as_mut_slice()) {
-                Ok(n) => {
-                    if opt.verbose {
-                        println!("\tRead {} bytes.", n);
-                    }
+fn get_fingerprint(file_name: &Path, buff_size: usize, is_verbose: bool) -> Vec<u8> {
+    let mut buff = vec![0u8; buff_size];
 
-                    let mut sha256 = Sha256::new();
-                    sha256.update(buff);
-                    let file_digest = sha256.finalize();
+    let mut file = File::open(file_name).unwrap();
+    let n = file.read(buff.as_mut_slice()).unwrap();
 
-                    if opt.verbose {
-                        println!("\tSHA256: {:02x}", file_digest);
-                    }
+    if is_verbose {
+        println!("\tRead {} bytes.", n);
+    }
 
-                    return Some(file_digest.to_vec());
-                }
-                Err(err) => {
-                    println!("{}", err);
-                    return None;
-                }
-            };
-        }
-        Err(err) => {
-            println!("{}", err);
-            return None;
-        }
-    };
-}
+    let mut sha256 = Sha256::new();
+    sha256.update(buff);
+    let file_digest = sha256.finalize();
 
-fn get_double_fingerprint(file_name: &Path, file_size: usize, opt: Opt) -> Option<Vec<u8>> {
-    let mut total = vec![0u8; 0];
-    //
-    // TODO: Continue the same way as above...
-    //
+    if is_verbose {
+        println!("\tSHA256: {:02x}", file_digest);
+    }
+
+    return file_digest.to_vec();
 }
 
 fn main() {
-    let opt = Opt::from_args();
+    let args = Opt::from_args();
 
-    assert!(
-        opt.directory.exists(),
-        "Not found: {}",
-        opt.directory.display()
-    );
+    let mut directory = args.directory.clone();
 
-    let buff_size: usize = match opt.buff_size.try_into() {
-        Ok(val) => val,
-        Err(err) => {
-            println!("{}", err);
-            4096
-        }
-    };
+    assert!(directory.exists(), "Not found: {}", directory.display());
+
+    let buff_size: usize = args.buff_size.try_into().unwrap();
 
     let mut counter = 0;
-    let mut total = vec![0u8; 0];
+    let mut hash_list: Vec<Vec<u8>> = Vec::new();
 
-    for entry in WalkDir::new(opt.directory) {
-        match entry {
-            Ok(entry) => {
-                if opt.verbose {
-                    println!("Scanning: {:?}", entry.path());
-                }
+    for fs_entry in WalkDir::new(&mut directory) {
+        let dir_entry = fs_entry.unwrap();
 
-                match entry.metadata() {
-                    Ok(meta) => {
-                        if meta.is_file() {
-                            if opt.verbose {
-                                println!("Processing file:");
-                                println!("\tSize: {}", meta.len());
-                            }
+        if args.verbose {
+            println!("Scanning: {:?}", dir_entry.path());
+        }
 
-                            if meta.len() < 2 * opt.buff_size {
-                                if opt.verbose {
-                                    println!("\tSmall file.");
-                                }
-
-                                let buff_size = match meta.len().try_into() {
-                                    Ok(val) => val,
-                                    Err(err) => {
-                                        panic!("{}", err);
-                                    }
-                                };
-
-                                let mut buff = vec![0u8; buff_size];
-                                match File::open(entry.path()) {
-                                    Ok(mut file) => {
-                                        match file.read(buff.as_mut_slice()) {
-                                            Ok(n) => {
-                                                if opt.verbose {
-                                                    println!("\tRead {} bytes.", n);
-                                                }
-
-                                                let mut sha256 = Sha256::new();
-                                                sha256.update(buff);
-                                                let file_digest = sha256.finalize();
-
-                                                if opt.verbose {
-                                                    println!("\tSHA256: {:02x}", file_digest);
-                                                }
-
-                                                total.extend(file_digest);
-                                                counter += 1;
-                                            }
-                                            Err(err) => {
-                                                println!("{}", err);
-                                                continue;
-                                            }
-                                        };
-                                    }
-                                    Err(err) => {
-                                        println!("{}", err);
-                                        continue;
-                                    }
-                                };
-                            } else {
-                                if opt.verbose {
-                                    println!("\tFingerprinting the file's head.");
-                                }
-
-                                let mut buff_head = vec![0u8; buff_size];
-                                match File::open(entry.path()) {
-                                    Ok(mut file) => {
-                                        match file.read(buff_head.as_mut_slice()) {
-                                            Ok(n) => {
-                                                if opt.verbose {
-                                                    println!("\tRead {} bytes.", n);
-                                                }
-
-                                                let mut sha256 = Sha256::new();
-                                                sha256.update(buff_head);
-                                                let file_digest = sha256.finalize();
-
-                                                if opt.verbose {
-                                                    println!("\tSHA256: {:02x}", file_digest);
-                                                }
-
-                                                total.extend(file_digest);
-                                            }
-                                            Err(err) => {
-                                                println!("{}", err);
-                                                continue;
-                                            }
-                                        };
-                                    }
-                                    Err(err) => {
-                                        println!("{}", err);
-                                    }
-                                }
-
-                                if opt.verbose {
-                                    println!("\tFingerprinting the file's tail.");
-                                }
-
-                                let mut buff_tail = vec![0u8; buff_size];
-                                match File::open(entry.path()) {
-                                    Ok(mut file) => {
-                                        match file.seek(SeekFrom::Start(
-                                            meta.len() - (opt.buff_size as u64),
-                                        )) {
-                                            Ok(p) => {
-                                                if opt.verbose {
-                                                    println!("\tMoved to {}", p);
-                                                }
-
-                                                match file.read(buff_tail.as_mut_slice()) {
-                                                    Ok(n) => {
-                                                        if opt.verbose {
-                                                            println!("\tRead {} bytes.", n);
-                                                        }
-
-                                                        let mut sha256 = Sha256::new();
-                                                        sha256.update(buff_tail);
-                                                        let file_digest = sha256.finalize();
-
-                                                        if opt.verbose {
-                                                            println!(
-                                                                "\tSHA256: {:02x}",
-                                                                file_digest
-                                                            );
-                                                        }
-
-                                                        total.extend(file_digest);
-                                                        counter += 1;
-                                                    }
-                                                    Err(err) => {
-                                                        println!("{}", err);
-                                                        continue;
-                                                    }
-                                                };
-                                            }
-                                            Err(err) => {
-                                                println!("{}", err);
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                    Err(err) => {
-                                        println!("{}", err);
-                                        continue;
-                                    }
-                                }
-                            }
-                        } else {
-                            if opt.verbose {
-                                println!("Skipping directory.");
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        println!("{}", err);
-                    }
-                }
+        let file_stats = dir_entry.metadata().unwrap();
+        if file_stats.is_file() {
+            if args.verbose {
+                println!("Processing file:");
+                println!("\tSize: {}", file_stats.len());
             }
-            Err(err) => {
-                println!("{}", err);
+
+            let file_fp = get_fingerprint(dir_entry.path(), buff_size, args.verbose);
+            hash_list.push(file_fp);
+            counter += 1;
+        } else {
+            if args.verbose {
+                println!("Skipping directory: {}", dir_entry.path().display());
             }
         }
     }
 
+    let hash_list_sorted: Vec<u8> = hash_list.into_iter().flatten().collect();
+
     let mut sha256 = Sha256::new();
-    sha256.update(total);
+    sha256.update(hash_list_sorted);
     let digest = sha256.finalize();
-    println!("SHA256: {:02x}", digest);
-    println!("Total files: {}", counter);
+    println!("Directory:\t{}", directory.display());
+    println!("File count:\t{}", counter);
+    println!("SHA256:\t\t{:02x}", digest);
 }
