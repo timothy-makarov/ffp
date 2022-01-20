@@ -7,7 +7,7 @@ use structopt::StructOpt;
 use walkdir::WalkDir;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "ffp - Fast FingerPrinting")]
+#[structopt(name = "ffp - Fast Finger Printing for Directories")]
 struct Opt {
     #[structopt(name = "DIRECTORY", parse(from_os_str))]
     directory: PathBuf,
@@ -26,7 +26,7 @@ fn get_fingerprint(file_name: &Path, buff_size: usize, is_verbose: bool) -> Vec<
     let n = file.read(buff.as_mut_slice()).unwrap();
 
     if is_verbose {
-        println!("\tRead {} bytes.", n);
+        println!("Read {} bytes.", n);
     }
 
     let mut sha256 = Sha256::new();
@@ -34,7 +34,7 @@ fn get_fingerprint(file_name: &Path, buff_size: usize, is_verbose: bool) -> Vec<
     let file_digest = sha256.finalize();
 
     if is_verbose {
-        println!("\tSHA256: {:02x}", file_digest);
+        println!("SHA256: {:02x}", file_digest);
     }
 
     return file_digest.to_vec();
