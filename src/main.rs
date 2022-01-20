@@ -1,9 +1,10 @@
 use sha2::{Digest, Sha256};
-use std::fs::File;
-use std::io::Read;
+use std::error::Error;
 use std::path::Path;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use tokio::fs::File;
+use tokio::io::AsyncReadExt;
 use walkdir::WalkDir;
 
 #[derive(StructOpt, Debug)]
@@ -19,11 +20,15 @@ struct Opt {
     verbose: bool,
 }
 
-fn get_fingerprint(file_name: &Path, buff_size: usize, is_verbose: bool) -> Vec<u8> {
+async fn get_fingerprint(
+    file_name: &Path,
+    buff_size: usize,
+    is_verbose: bool,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut buff = vec![0u8; buff_size];
 
-    let mut file = File::open(file_name).unwrap();
-    let n = file.read(buff.as_mut_slice()).unwrap();
+    let mut file = File::open(file_name).await?;
+    let n = file.read(buff.as_mut_slice()).await?;
 
     if is_verbose {
         println!("Read {} bytes.", n);
@@ -37,10 +42,11 @@ fn get_fingerprint(file_name: &Path, buff_size: usize, is_verbose: bool) -> Vec<
         println!("SHA256: {:02x}", file_digest);
     }
 
-    return file_digest.to_vec();
+    return Ok(file_digest.to_vec());
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let args = Opt::from_args();
 
     let mut directory = args.directory.clone();
@@ -66,7 +72,7 @@ fn main() {
                 println!("\tSize: {}", file_stats.len());
             }
 
-            let file_fp = get_fingerprint(dir_entry.path(), buff_size, args.verbose);
+            let file_fp = get_fingerprint(dir_entry.path(), buff_size, args.verbose).await?;
             hash_list.push(file_fp);
             counter += 1;
         } else {
@@ -84,4 +90,6 @@ fn main() {
     println!("Directory:\t{}", directory.display());
     println!("File count:\t{}", counter);
     println!("SHA256:\t\t{:02x}", digest);
+
+    Ok(())
 }
